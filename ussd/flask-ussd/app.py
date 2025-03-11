@@ -42,7 +42,7 @@ def init_db():
     ''')
     
     # Insert demo user if not exists
-    c.execute("SELECT * FROM users WHERE phone_number = '+254700000000'")
+    c.execute("SELECT * FROM users WHERE phone_number = '+254758750620'")
     if not c.fetchone():
         # Store PIN as hashed value (using simple hash for demo)
         hashed_pin = hashlib.sha256('1234'.encode()).hexdigest()
