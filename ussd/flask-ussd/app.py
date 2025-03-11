@@ -47,7 +47,7 @@ def init_db():
         # Store PIN as hashed value (using simple hash for demo)
         hashed_pin = hashlib.sha256('1234'.encode()).hexdigest()
         c.execute("INSERT INTO users (phone_number, pin, account_number, balance, name) VALUES (?, ?, ?, ?, ?)", 
-                 ('+254700000000', hashed_pin, 'ACC1001', 10000.0, 'Demo User'))
+                 ('+254758750620', hashed_pin, 'ACC1001', 10000.0, 'Demo User'))
     
     conn.commit()
     conn.close()
