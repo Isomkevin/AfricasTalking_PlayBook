@@ -28,14 +28,14 @@ def send_sms_with_retries(phone_number, message, retries=3, delay=2):
     while attempt < retries:
         try:
             sms.send(message=message, recipients=[phone_number])
-            print(f"SMS sent successfully to {phone_number}")
+            print(f"[SUCCESS] SMS sent to {phone_number}: {message}")
             break
         except Exception as e:
             attempt += 1
-            print(f"SMS send attempt {attempt} failed: {e}")
+            print(f"[ERROR] SMS send attempt {attempt} for {phone_number} failed: {e}")
             time.sleep(delay * attempt)
     else:
-        print(f"Failed to send SMS to {phone_number} after {retries} attempts.")
+        print(f"[FAILURE] Could not send SMS to {phone_number} after {retries} attempts")
 
 @app.route('/ussd', methods=['POST', 'GET'])
 def ussd_callback():
@@ -68,6 +68,7 @@ def ussd_callback():
             target=send_sms_with_retries, 
             args=(phone_number, message)
         ).start()
+        print(f"[INFO] Triggered SMS send for {phone_number}")
         return "END Welcome to KaziChain! We’ve sent you a link via SMS to get started."
 
     # VIEW ACCOUNT DETAILS
@@ -87,9 +88,11 @@ def ussd_callback():
                 if len(steps) == 2:
                     return "CON Enter amount to withdraw:"
                 amount = steps[2]
+                print(f"[INFO] Worker {phone_number} withdrew {amount} KES")
                 return f"END Withdrawal of KES {amount} successful"
             if steps[1] == "2":
                 balance = "KES 5,000"
+                print(f"[INFO] Worker {phone_number} checked balance: {balance}")
                 return f"END Your balance is {balance}"
 
         # Employer Flow
@@ -103,11 +106,13 @@ def ussd_callback():
                 return response
             if steps[1] == "1":
                 balance = "KES 12,000"
+                print(f"[INFO] Employer {phone_number} checked balance: {balance}")
                 return f"END Your balance is {balance}"
             if steps[1] == "2":
                 if len(steps) == 2:
                     return "CON Enter amount to deposit:"
                 amount = steps[2]
+                print(f"[INFO] Employer {phone_number} deposited {amount} KES")
                 return f"END Deposit of KES {amount} successful"
 
     return "END Invalid option"
