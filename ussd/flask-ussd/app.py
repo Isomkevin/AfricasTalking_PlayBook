@@ -2,37 +2,38 @@ from flask import Flask, request
 from flask_cors import CORS
 import threading
 import time
+import os
 import africastalking  # pip install africastalking
+from dotenv import load_dotenv  # pip install python-dotenv
+
+# Load environment variables from .env
+load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
 
-# Africa's Talking config
-USERNAME = "lesom_AT"
-API_KEY = "YOUR_API_KEY"
+# Africa's Talking config from env
+USERNAME = os.getenv("AFRICASTALKING_USERNAME")
+API_KEY = os.getenv("AFRICASTALKING_API_KEY")
+WEB_APP_LINK = os.getenv("WEB_APP_LINK")
+
+if not USERNAME or not API_KEY or not WEB_APP_LINK:
+    raise EnvironmentError("AFRICASTALKING_USERNAME, AFRICASTALKING_API_KEY, and WEB_APP_LINK must be set in environment variables")
+
 africastalking.initialize(USERNAME, API_KEY)
 sms = africastalking.SMS
 
-WEB_APP_LINK = "https://stellarites.vercel.app/"
-
 def send_sms_with_retries(phone_number, message, retries=3, delay=2):
-    """
-    Send SMS with retry mechanism in background.
-    :param phone_number: recipient
-    :param message: text message
-    :param retries: number of retries
-    :param delay: initial delay in seconds
-    """
     attempt = 0
     while attempt < retries:
         try:
             sms.send(message=message, recipients=[phone_number])
             print(f"SMS sent successfully to {phone_number}")
-            break  # Success, exit loop
+            break
         except Exception as e:
             attempt += 1
             print(f"SMS send attempt {attempt} failed: {e}")
-            time.sleep(delay * attempt)  # Exponential backoff
+            time.sleep(delay * attempt)
     else:
         print(f"Failed to send SMS to {phone_number} after {retries} attempts.")
 
@@ -45,7 +46,7 @@ def ussd_callback():
 
     steps = text.split("*")
 
-    # Mock role resolution (replace with DB lookup)
+    # Mock role resolution
     def get_user_role(phone):
         if phone.endswith("1"):
             return "worker"
@@ -60,20 +61,20 @@ def ussd_callback():
         )
         return response
 
-    # 1️⃣ START WITH KAZICHAIN → send SMS asynchronously with retries
+    # START WITH KAZICHAIN
     if steps[0] == "1":
         message = f"Welcome to KaziChain! Access the web app here: {WEB_APP_LINK}"
         threading.Thread(
-            target=send_sms_with_retries,
+            target=send_sms_with_retries, 
             args=(phone_number, message)
         ).start()
         return "END Welcome to KaziChain! We’ve sent you a link via SMS to get started."
 
-    # 2️⃣ VIEW ACCOUNT DETAILS → ROLE CHECK
+    # VIEW ACCOUNT DETAILS
     if steps[0] == "2":
         role = get_user_role(phone_number)
 
-        # WORKER FLOW
+        # Worker Flow
         if role == "worker":
             if len(steps) == 1:
                 response = (
@@ -82,20 +83,16 @@ def ussd_callback():
                     "2. Check Account Balance"
                 )
                 return response
-
-            # Withdraw
             if steps[1] == "1":
                 if len(steps) == 2:
                     return "CON Enter amount to withdraw:"
                 amount = steps[2]
                 return f"END Withdrawal of KES {amount} successful"
-
-            # Check Balance
             if steps[1] == "2":
                 balance = "KES 5,000"
                 return f"END Your balance is {balance}"
 
-        # EMPLOYER FLOW
+        # Employer Flow
         if role == "employer":
             if len(steps) == 1:
                 response = (
@@ -104,13 +101,9 @@ def ussd_callback():
                     "2. Deposit Funds"
                 )
                 return response
-
-            # View Balance
             if steps[1] == "1":
                 balance = "KES 12,000"
                 return f"END Your balance is {balance}"
-
-            # Deposit
             if steps[1] == "2":
                 if len(steps) == 2:
                     return "CON Enter amount to deposit:"
