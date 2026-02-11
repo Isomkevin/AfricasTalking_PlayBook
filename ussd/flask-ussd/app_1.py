@@ -27,7 +27,7 @@ def ussd_callback():
     # STEP 1: MAIN MENU
     if len(steps) == 1:
         response = "CON Welcome to KaziChain\n"
-        response += "1. Wallet Services\n"
+        response += "1. Start with Us\n"
         response += "2. Account Services"
         return response
 
