@@ -27,7 +27,7 @@ def send_sms_with_retries(phone_number, message, retries=3, delay=2):
     attempt = 0
     while attempt < retries:
         try:
-            sms.send(message=message, recipients=[phone_number])
+            sms.send(message=message, recipients=[phone_number], sender_id="AFTKNG"  # your Alphanumeric sender ID)
             print(f"[SUCCESS] SMS sent to {phone_number}: {message}")
             break
         except Exception as e:
