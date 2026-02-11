@@ -33,7 +33,9 @@ def ussd_callback():
         return (
             "END Welcome to KaziChain!\n"
             "Access the web app here:\n"
-            "https://app.kazichain.com"
+            "https://app.kazichain.com\n"
+            "We are sending you an sms shortly"
+            
         )
 
     # 2️⃣ VIEW ACCOUNT DETAILS → ROLE CHECK
