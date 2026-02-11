@@ -45,7 +45,7 @@ flask-sms/
 
   africastalking.initialize(username, api_key)
   sms = africastalking.SMS
-  response = sms.send('Hello from Flask!', ['+2547xxxxxxx'])
+  response = sms.send('Hello from Flask!', ['+2547xxxxxxx'], sender_id="AFTKNG"  # your Alphanumeric sender ID)
   print(response)
   ```
 - Create a Flask route to trigger SMS sending.
