@@ -2,3 +2,4 @@ flask
 africastalking
 python-dotenv
 flask-cors
+gunicorn
