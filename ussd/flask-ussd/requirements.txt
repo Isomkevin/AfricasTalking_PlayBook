@@ -3,3 +3,5 @@ africastalking
 python-dotenv
 flask-cors
 gunicorn
+
+stellar-sdk
