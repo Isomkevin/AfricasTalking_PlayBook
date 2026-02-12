@@ -5,40 +5,58 @@ import time
 import os
 import json
 import requests
-import africastalking  # pip install africastalking
-from dotenv import load_dotenv  # pip install python-dotenv
-from stellar_sdk import Keypair, Server, TransactionBuilder, Network
 
-# Load environment variables
+import africastalking
+from dotenv import load_dotenv
+from stellar_sdk import (
+    Keypair,
+    Server,
+    TransactionBuilder,
+    Network,
+)
+
+# --------------------------------------------------
+# Load ENV
+# --------------------------------------------------
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
 
-# Africa's Talking config
+# --------------------------------------------------
+# Africa's Talking Config
+# --------------------------------------------------
 USERNAME = os.getenv("AFRICASTALKING_USERNAME")
 API_KEY = os.getenv("AFRICASTALKING_API_KEY")
 SENDER_ID = os.getenv("AFRICASTALKING_SENDER_ID")
 WEB_APP_LINK = os.getenv("WEB_APP_LINK")
 
-if not USERNAME or not API_KEY or not WEB_APP_LINK:
-    raise EnvironmentError("AFRICASTALKING_USERNAME, AFRICASTALKING_API_KEY, and WEB_APP_LINK must be set in environment variables")
+if not USERNAME or not API_KEY:
+    raise EnvironmentError("Africa's Talking credentials missing")
 
 africastalking.initialize(USERNAME, API_KEY)
 sms = africastalking.SMS
 
-# Stellar setup
-STELLAR_SECRET = os.getenv("STELLAR_SECRET_KEY")  # Platform escrow account
-if not STELLAR_SECRET:
-    raise EnvironmentError("STELLAR_SECRET_KEY must be set in environment variables")
+# --------------------------------------------------
+# Stellar Config (Testnet)
+# --------------------------------------------------
+HORIZON_URL = os.getenv("HORIZON_URL", "https://horizon-testnet.stellar.org")
+STELLAR_SECRET = os.getenv("STELLAR_SECRET_KEY")
 
-server = Server("https://horizon-testnet.stellar.org")
+if not STELLAR_SECRET:
+    raise EnvironmentError("STELLAR_SECRET_KEY missing")
+
+server = Server(HORIZON_URL)
 network_passphrase = Network.TESTNET_NETWORK_PASSPHRASE
+
 platform_keypair = Keypair.from_secret(STELLAR_SECRET)
 platform_public = platform_keypair.public_key
 
-# Persistent phone -> Stellar mapping
+# --------------------------------------------------
+# Phone → Stellar Mapping (local persistence)
+# --------------------------------------------------
 MAPPING_FILE = "phone_to_stellar.json"
+
 if os.path.exists(MAPPING_FILE):
     with open(MAPPING_FILE, "r") as f:
         phone_to_stellar = json.load(f)
@@ -49,97 +67,89 @@ def save_mapping():
     with open(MAPPING_FILE, "w") as f:
         json.dump(phone_to_stellar, f, indent=2)
 
-# SMS helper
-def send_sms_with_retries(phone_number, message, retries=3, delay=2):
-    attempt = 0
-    while attempt < retries:
+# --------------------------------------------------
+# SMS Helper
+# --------------------------------------------------
+def send_sms_with_retries(phone, message, retries=3):
+    for attempt in range(retries):
         try:
-            sms.send(message=message, recipients=[phone_number], sender_id=SENDER_ID)
-            print(f"[SUCCESS] SMS sent to {phone_number}: {message}")
-            break
+            sms.send(message=message, recipients=[phone], sender_id=SENDER_ID)
+            return
         except Exception as e:
-            attempt += 1
-            print(f"[ERROR] SMS send attempt {attempt} for {phone_number} failed: {e}")
-            time.sleep(delay * attempt)
-    else:
-        print(f"[FAILURE] Could not send SMS to {phone_number} after {retries} attempts")
+            print(f"[SMS ERROR] {e}")
+            time.sleep(2 * (attempt + 1))
 
-# Stellar helpers
-def get_or_create_stellar_account(phone_number):
-    """Return Stellar info (public + secret) for a phone, create if new"""
-    if phone_number in phone_to_stellar:
-        return phone_to_stellar[phone_number]
+# --------------------------------------------------
+# Stellar Helpers (CONNECTED VERSION)
+# --------------------------------------------------
+def generate_account():
+    kp = Keypair.random()
+    return {"public": kp.public_key, "secret": kp.secret}
 
-    # Generate Stellar keypair
-    keypair = Keypair.random()
-    public_key = keypair.public_key
-    secret_key = keypair.secret
+def fund_testnet_account(public_key):
+    response = requests.get(
+        "https://friendbot.stellar.org",
+        params={"addr": public_key},
+        timeout=10
+    )
+    response.raise_for_status()
 
-    # Fund account on testnet via Friendbot
-    response = requests.get(f"https://friendbot.stellar.org?addr={public_key}")
-    if response.status_code == 200:
-        print(f"[SUCCESS] Funded {phone_number} account with Friendbot: {public_key}")
-    else:
-        print(f"[ERROR] Friendbot funding failed: {response.text}")
+def get_or_create_stellar_account(phone):
+    if phone in phone_to_stellar:
+        return phone_to_stellar[phone]
 
-    # Map phone -> Stellar
-    phone_to_stellar[phone_number] = {"public": public_key, "secret": secret_key}
+    account = generate_account()
+    fund_testnet_account(account["public"])
+
+    phone_to_stellar[phone] = account
     save_mapping()
-    print(f"[INFO] Created new Stellar account for {phone_number}: {public_key}")
 
-    return phone_to_stellar[phone_number]
-
-def send_payment(receiver_public, amount):
-    """Send XLM from platform escrow to a user"""
-    try:
-        account = server.load_account(platform_public)
-        transaction = (
-            TransactionBuilder(
-                source_account=account,
-                network_passphrase=network_passphrase,
-                base_fee=100
-            )
-            .add_text_memo("KaziChain Payment")
-            .append_payment_op(destination=receiver_public, amount=str(amount), asset_code="XLM")
-            .set_timeout(30)
-            .build()
-        )
-        transaction.sign(platform_keypair)
-        response = server.submit_transaction(transaction)
-        print(f"[SUCCESS] Stellar payment submitted: {response}")
-        return True
-    except Exception as e:
-        print(f"[ERROR] Stellar payment failed: {e}")
-        return False
+    print(f"[STELLAR] Created account for {phone}: {account['public']}")
+    return account
 
 def get_balance(public_key):
-    """Check XLM balance for a Stellar account"""
-    try:
-        account = server.accounts().account_id(public_key).call()
-        for b in account['balances']:
-            if b['asset_type'] == 'native':
-                return float(b['balance'])
-        return 0.0
-    except Exception as e:
-        print(f"[ERROR] Could not fetch balance: {e}")
-        return 0.0
+    acct = server.accounts().account_id(public_key).call()
+    for b in acct["balances"]:
+        if b["asset_type"] == "native":
+            return float(b["balance"])
+    return 0.0
 
-# Mock role resolution
-def get_user_role(phone_number):
-    return "worker" if phone_number.endswith("1") else "employer"
+def send_payment(destination, amount):
+    source_account = server.load_account(platform_public)
 
-# USSD endpoint
-@app.route('/ussd', methods=['POST', 'GET'])
-def ussd_callback():
-    phone_number = request.values.get("phoneNumber", "")
+    tx = (
+        TransactionBuilder(
+            source_account=source_account,
+            network_passphrase=network_passphrase,
+            base_fee=100,
+        )
+        .append_payment_op(destination=destination, amount=str(amount), asset_code="XLM")
+        .add_text_memo("KaziChain Payment")
+        .set_timeout(30)
+        .build()
+    )
+
+    tx.sign(platform_keypair)
+    server.submit_transaction(tx)
+
+# --------------------------------------------------
+# Mock Role Logic
+# --------------------------------------------------
+def get_user_role(phone):
+    return "worker" if phone.endswith("1") else "employer"
+
+# --------------------------------------------------
+# USSD Endpoint
+# --------------------------------------------------
+@app.route("/ussd", methods=["POST", "GET"])
+def ussd():
+    phone = request.values.get("phoneNumber", "")
     text = request.values.get("text", "")
     steps = text.split("*")
 
-    # Ensure Stellar account exists dynamically
-    stellar_info = get_or_create_stellar_account(phone_number)
-    stellar_public = stellar_info["public"]
+    stellar = get_or_create_stellar_account(phone)
+    public_key = stellar["public"]
 
-    # MAIN MENU
     if text == "":
         return (
             "CON Welcome to KaziChain\n"
@@ -147,58 +157,40 @@ def ussd_callback():
             "2. View Account Details"
         )
 
-    # START WITH KAZICHAIN
     if steps[0] == "1":
-        message = f"Welcome to KaziChain! Access the web app here: {WEB_APP_LINK}"
-        threading.Thread(target=send_sms_with_retries, args=(phone_number, message)).start()
-        return "END Welcome to KaziChain! We’ve sent you a link via SMS to get started."
+        threading.Thread(
+            target=send_sms_with_retries,
+            args=(phone, f"Welcome to KaziChain: {WEB_APP_LINK}")
+        ).start()
+        return "END We’ve sent you a link via SMS."
 
-    # VIEW ACCOUNT DETAILS
     if steps[0] == "2":
-        role = get_user_role(phone_number)
+        role = get_user_role(phone)
 
-        # Worker Flow
         if role == "worker":
             if len(steps) == 1:
-                return "CON Account Type: Worker\n1. Withdraw Funds\n2. Check Account Balance"
+                return "CON Worker Menu\n1. Withdraw\n2. Balance"
 
-            # Withdraw funds
             if steps[1] == "1":
                 if len(steps) == 2:
-                    return "CON Enter amount to withdraw (XLM):"
-                amount = steps[2]
-                success = send_payment(stellar_public, amount)
-                msg = f"Your withdrawal of {amount} XLM has been processed successfully." if success else "Withdrawal failed. Try later."
-                threading.Thread(target=send_sms_with_retries, args=(phone_number, msg)).start()
-                return f"END {msg}"
+                    return "CON Enter amount (XLM):"
+                send_payment(public_key, steps[2])
+                return "END Withdrawal sent."
 
-            # Check balance
             if steps[1] == "2":
-                balance = get_balance(stellar_public)
-                threading.Thread(target=send_sms_with_retries, args=(phone_number, f"Your balance is {balance} XLM")).start()
-                return f"END Your balance is {balance} XLM"
+                bal = get_balance(public_key)
+                return f"END Your balance is {bal} XLM"
 
-        # Employer Flow
-        if role == "employer":
+        else:
             if len(steps) == 1:
-                return "CON Account Type: Employer\n1. View Balance Details\n2. Deposit Funds"
+                return "CON Employer Menu\n1. Balance"
 
-            # View balance
             if steps[1] == "1":
-                balance = get_balance(stellar_public)
-                threading.Thread(target=send_sms_with_retries, args=(phone_number, f"Your balance is {balance} XLM")).start()
-                return f"END Your balance is {balance} XLM"
-
-            # Deposit funds (simulated)
-            if steps[1] == "2":
-                if len(steps) == 2:
-                    return "CON Enter amount to deposit (XLM):"
-                amount = steps[2]
-                msg = f"Deposit of {amount} XLM recorded. (Simulated for testnet)"
-                threading.Thread(target=send_sms_with_retries, args=(phone_number, msg)).start()
-                return f"END {msg}"
+                bal = get_balance(public_key)
+                return f"END Your balance is {bal} XLM"
 
     return "END Invalid option"
 
+# --------------------------------------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5001)
