@@ -15,6 +15,7 @@ CORS(app)
 # Africa's Talking config from env
 USERNAME = os.getenv("AFRICASTALKING_USERNAME")
 API_KEY = os.getenv("AFRICASTALKING_API_KEY")
+SENDER_ID = os.getenv("AFRICASTALKING_SENDER_ID")
 WEB_APP_LINK = os.getenv("WEB_APP_LINK")
 
 if not USERNAME or not API_KEY or not WEB_APP_LINK:
@@ -27,7 +28,7 @@ def send_sms_with_retries(phone_number, message, retries=3, delay=2):
     attempt = 0
     while attempt < retries:
         try:
-            sms.send(message=message, recipients=[phone_number], sender_id="AFTKNG")
+            sms.send(message=message, recipients=[phone_number], sender_id=SENDER_ID)
             print(f"[SUCCESS] SMS sent to {phone_number}: {message}")
             break
         except Exception as e:
