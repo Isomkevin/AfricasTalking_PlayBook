@@ -90,10 +90,20 @@ def ussd_callback():
                     return "CON Enter amount to withdraw:"
                 amount = steps[2]
                 print(f"[INFO] Worker {phone_number} withdrew {amount} KES")
+                # Event SMS
+                threading.Thread(
+                    target=send_sms_with_retries,
+                    args=(phone_number, f"Your withdrawal of KES {amount} has been processed successfully.")
+                ).start()
                 return f"END Withdrawal of KES {amount} successful"
             if steps[1] == "2":
                 balance = "KES 5,000"
                 print(f"[INFO] Worker {phone_number} checked balance: {balance}")
+                # Event SMS
+                threading.Thread(
+                    target=send_sms_with_retries,
+                    args=(phone_number, f"Your current account balance is {balance}.")
+                ).start()
                 return f"END Your balance is {balance}"
 
         # Employer Flow
@@ -108,12 +118,22 @@ def ussd_callback():
             if steps[1] == "1":
                 balance = "KES 12,000"
                 print(f"[INFO] Employer {phone_number} checked balance: {balance}")
+                # Event SMS
+                threading.Thread(
+                    target=send_sms_with_retries,
+                    args=(phone_number, f"Your current account balance is {balance}.")
+                ).start()
                 return f"END Your balance is {balance}"
             if steps[1] == "2":
                 if len(steps) == 2:
                     return "CON Enter amount to deposit:"
                 amount = steps[2]
                 print(f"[INFO] Employer {phone_number} deposited {amount} KES")
+                # Event SMS
+                threading.Thread(
+                    target=send_sms_with_retries,
+                    args=(phone_number, f"Your deposit of KES {amount} has been successfully added to your account.")
+                ).start()
                 return f"END Deposit of KES {amount} successful"
 
     return "END Invalid option"
