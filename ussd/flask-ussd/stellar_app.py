@@ -123,7 +123,7 @@ def send_payment(destination, amount):
             network_passphrase=network_passphrase,
             base_fee=100,
         )
-        .append_payment_op(destination=destination, amount=str(amount), asset_code="XLM")
+        .append_payment_op(destination=destination, amount=str(amount), asset="XLM")
         .add_text_memo("KaziChain Payment")
         .set_timeout(30)
         .build()
