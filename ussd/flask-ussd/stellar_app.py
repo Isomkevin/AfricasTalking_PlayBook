@@ -136,7 +136,7 @@ def send_payment(destination, amount):
 # Mock Role Logic
 # --------------------------------------------------
 def get_user_role(phone):
-    return "worker" if phone.endswith("1") else "employer"
+    return "worker" if phone.endswith("1") else "worker" # Even if it is an "employer"
 
 # --------------------------------------------------
 # USSD Endpoint
